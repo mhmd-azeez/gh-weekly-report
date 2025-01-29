@@ -8,19 +8,14 @@ if (!process.env.MCPX_SESSION_ID) {
   throw new Error('MCPX_SESSION_ID environment variable is required');
 }
 
-console.log('establishing session');
-
 const session = new Session({
   authentication: [
     ["cookie", `sessionId=${process.env.MCPX_SESSION_ID}`]
   ],
-  activeProfile: 'default'
+  activeProfile: 'mastra-ai'
 });
 
-console.log('creating github agent')
 const gitHubAgent = await createGitHubAgent(session);
-
-console.log('github agent created')
 
 export const mastra = new Mastra({
   workflows: {},

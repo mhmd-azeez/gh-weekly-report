@@ -1,6 +1,7 @@
 import { Session } from '@dylibso/mcpx';
 import { createTool } from '@mastra/core';
 import { z } from 'zod';
+import { jsonSchemaToZod } from "json-schema-to-zod";
 
 interface MCPXTool {
   name: string;
@@ -17,19 +18,10 @@ interface MCPXCallResult {
 
 // Helper function to convert MCP JSON Schema to Zod schema
 function convertToZodSchema(schema: Record<string, any>): z.ZodType {
+
   if (!schema || typeof schema !== 'object') {
     return z.object({}).passthrough();
   }
-
-  // Handle OpenAI's requirement that properties with defaults must be in required array
-  // if (schema.properties) {
-  //   schema.required = Object.entries(schema.properties)
-  //     .filter(([key, prop]) =>
-  //       // Include if it's already required or has a default value
-  //       schema.required?.includes(key) || 'default' in (prop as any)
-  //     )
-  //     .map(([key]) => key);
-  // }
 
   if (schema.properties) {
     schema.required = Object.entries(schema.properties)
@@ -52,13 +44,15 @@ function convertToZodSchema(schema: Record<string, any>): z.ZodType {
           }
           break;
         case 'number':
-          fieldSchema = z.number();
-          // if (typeof prop.minimum === 'number') {
-          //   fieldSchema = fieldSchema.min(prop.minimum);
-          // }
-          // if (typeof prop.maximum === 'number') {
-          //   fieldSchema = fieldSchema.max(prop.maximum);
-          // }
+          let number = z.number().min(prop.minimum).max(prop.maximum);
+          if (typeof prop.minimum === 'number') {
+            number = number.min(prop.minimum);
+          }
+          if (typeof prop.maximum === 'number') {
+            number = number.max(prop.maximum);
+          }
+
+          fieldSchema = number;
           break;
         case 'integer':
           fieldSchema = z.number().int();
@@ -170,13 +164,3 @@ export async function getMcpxTools(session: Session) {
     throw error;
   }
 }
-
-// Example usage:
-/*
-const session = new Session({...});
-const tools = await getMcpxTools(session);
-
-const mastra = new Mastra({
-  tools
-});
-*/
