@@ -16,6 +16,7 @@
   "dependencies": {
     "@dylibso/mcpx": "^0.21.0",
     "@mastra/core": "^0.1.27-alpha.76",
+    "openai-zod-to-json-schema": "^1.0.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {
