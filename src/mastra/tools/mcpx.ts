@@ -1,8 +1,6 @@
 import { Session } from '@dylibso/mcpx';
 import { createTool } from '@mastra/core';
 import { z } from 'zod';
-import { jsonSchemaToZod } from "json-schema-to-zod";
-import { zodToJsonSchema } from 'openai-zod-to-json-schema';
 
 interface MCPXTool {
   name: string;
@@ -17,26 +15,13 @@ interface MCPXCallResult {
   }>;
 }
 
-interface SchemaStats {
-  totalProps: number;
-  nestingLevel: number;
-  enumValues: Set<string>;
-  totalStringLength: number;
-}
-
-// Convert JSON schema to Zod schema while also making sure it doesn't exceed OpenAI limits
+// Converts a JSON schema to a Zod schema tailored for OpenAPI's structured output schema
 // See: https://platform.openai.com/docs/guides/structured-outputs/supported-schemas
-function convertToZodSchema(schema: Record<string, any>, stats: SchemaStats = { 
-  totalProps: 0,
-  nestingLevel: 0,
-  enumValues: new Set(),
-  totalStringLength: 0
-}): z.ZodType {
+function convertToZodSchema(schema: Record<string, any>): z.ZodType {
   if (!schema || typeof schema !== 'object') {
     return z.object({}).passthrough();
   }
 
-  // For non-object types
   if (schema.type !== 'object') {
     if (Array.isArray(schema.type)) {
       if (schema.type.includes('null')) {
@@ -59,10 +44,6 @@ function convertToZodSchema(schema: Record<string, any>, stats: SchemaStats = {
     switch (schema.type) {
       case 'string':
         if (schema.enum) {
-          schema.enum.forEach((value: string) => {
-            stats.enumValues.add(value);
-            stats.totalStringLength += value.length;
-          });
           return z.enum(schema.enum as [string, ...string[]]);
         }
         return z.string();
@@ -72,36 +53,20 @@ function convertToZodSchema(schema: Record<string, any>, stats: SchemaStats = {
       case 'boolean':
         return z.boolean();
       case 'array':
-        return z.array(convertToZodSchema(schema.items, {
-          ...stats,
-          nestingLevel: stats.nestingLevel + 1
-        }));
+        return z.array(convertToZodSchema(schema.items));
       default:
         return z.any();
     }
   }
 
-  // Handle object type
   const properties = schema.properties || {};
   const zodSchema: Record<string, z.ZodType> = {};
   const required = schema.required || [];
-
-  // Track total properties
-  stats.totalProps += Object.keys(properties).length;
-  if (stats.totalProps > 100) {
-    throw new Error('Schema exceeds maximum of 100 total properties');
-  }
 
   for (const [key, prop] of Object.entries(properties)) {
     const value = prop as Record<string, any>;
     let fieldSchema: z.ZodType;
 
-    const nextStats = {
-      ...stats,
-      nestingLevel: stats.nestingLevel + 1
-    };
-
-    // Convert the property type
     switch (value.type) {
       case 'string':
         fieldSchema = value.enum 
@@ -116,21 +81,19 @@ function convertToZodSchema(schema: Record<string, any>, stats: SchemaStats = {
         fieldSchema = z.boolean();
         break;
       case 'array':
-        fieldSchema = z.array(convertToZodSchema(value.items, nextStats));
+        fieldSchema = z.array(convertToZodSchema(value.items));
         break;
       case 'object':
-        fieldSchema = convertToZodSchema(value, nextStats);
+        fieldSchema = convertToZodSchema(value);
         break;
       default:
         fieldSchema = z.any();
     }
 
-    // Keep the original required/optional state
     if (!required.includes(key)) {
       fieldSchema = fieldSchema.nullable();
     }
 
-    // Add description if present
     if (value.description) {
       fieldSchema = fieldSchema.describe(value.description);
     }
@@ -138,7 +101,6 @@ function convertToZodSchema(schema: Record<string, any>, stats: SchemaStats = {
     zodSchema[key] = fieldSchema;
   }
 
-  // Create object and preserve original additionalProperties setting
   const result = z.object(zodSchema);
   if (schema.additionalProperties === false) {
     (result as any)._def.unknownKeys = 'strip';
@@ -149,12 +111,10 @@ function convertToZodSchema(schema: Record<string, any>, stats: SchemaStats = {
 
 export async function getMcpxTools(session: Session) {
   try {
-    // Get all available tools from MCPX
     const { tools: mcpxTools } = await session.handleListTools({
       method: 'tools/list'
     }, {} as any);
 
-    // Convert MCPX tools to Mastra tools
     const tools = mcpxTools.map((mcpxTool: MCPXTool) => {
       const zodSchema = convertToZodSchema(mcpxTool.inputSchema);
 
@@ -174,7 +134,6 @@ export async function getMcpxTools(session: Session) {
 
             if (!result) return null;
 
-            // Handle MCPX content array
             if (result.content) {
               return result.content.reduce((acc, item) => {
                 if (item.type === 'text') {
@@ -197,7 +156,6 @@ export async function getMcpxTools(session: Session) {
       });
     });
 
-    // Convert array of tools to record
     return tools.reduce((acc, tool) => ({
       ...acc,
       [tool.id]: tool

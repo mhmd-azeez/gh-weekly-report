@@ -3,10 +3,8 @@ import { getMcpxTools } from '../tools/mcpx';
 import { Session } from '@dylibso/mcpx';
 
 export const createGitHubAgent = async (session: Session) => {
-  console.log('getting mcpx tools');
   const mcpxTools = await getMcpxTools(session);
 
-  console.log('tools count:', Object.keys(mcpxTools).length);
   return new Agent({
     name: 'Github Agent',
     instructions: `
